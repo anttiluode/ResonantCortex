@@ -1,6 +1,10 @@
 # Resonant Cortex (RCNet)
 ### Computation is Geometry. Intelligence is Resonance.
 
+Edit: Added neural painter that uses this to match images. It goes through 
+interseting process. (depending on image) Tries to match the moire patterns (fighting 
+against nyquist limit due to the 128 resolution with gradients) and finally matches image. 
+
 ![The Butterfly Effect](mandelbrot_grok.png)
 
 ![The Butterfly Effect](chaos_fixed.png)
@@ -62,6 +66,8 @@ RCNet includes a **Frustration Monitor**:
 python resonant_cortex.py
 ```
 Outputs `resonant_cortex_results.png` (Phase Heatmap).
+
+![Neuralpainter](neuralpainter.png)
 
 #### 2. Chaos Simulation (The Butterfly)
 ```bash
