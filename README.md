@@ -16,6 +16,8 @@ It uses **Complex-Valued Neural Networks (CVNNs)** where every neuron has:
 
 This allows RCNet to solve problems via **Wave Interference** and **Phase Locking** rather than brute-force memorization.
 
+![Grokking](resonant_cortex_results.png)
+
 ## 🚀 Key Results
 
 ### 1. Modular Arithmetic (The Grokking Test)
