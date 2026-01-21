@@ -1,6 +1,8 @@
 # Resonant Cortex (RCNet)
 ### Computation is Geometry. Intelligence is Resonance.
 
+![The Butterfly Effect](mandelbrot_grok.png)
+
 ![The Butterfly Effect](chaos_fixed.png)
 *RCNet phase-locking onto the chaotic attractor of the Lorenz System. The red line (AI Hallucination) perfectly traces the blue line (True Physics) by learning the system's differential equations in the frequency domain.*
 
