@@ -5,7 +5,7 @@ Edit: Added neural painter that uses this to match images. It goes through
 interseting process. (depending on image) Tries to match the moire patterns (fighting 
 against nyquist limit due to the 128 resolution with gradients) and finally matches image. 
 
-![The Butterfly Effect](mandelbrot_grok.png.png)
+![The Butterfly Effect](mandelbrot_grok.png)
 
 ![The Butterfly Effect](chaos_fixed.png)
 *RCNet phase-locking onto the chaotic attractor of the Lorenz System. The red line (AI Hallucination) perfectly traces the blue line (True Physics) by learning the system's differential equations in the frequency domain.*
