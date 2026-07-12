@@ -1,6 +1,8 @@
 # Resonant Cortex (RCNet)
 ### Computation is Geometry. Intelligence is Resonance.
 
+Fable wrote resonant cortex live: https://anttiluode.github.io/ResonantCortex/ app. 
+
 Edit: Added neural painter that uses this to match images. It goes through 
 interseting process. (depending on image) Tries to match the moire patterns (fighting 
 against nyquist limit due to the 128 resolution with gradients) and finally matches image. 
