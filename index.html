@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resonant Cortex — live grokking instrument</title>
+<style>
+  :root{
+    --bg:#14101d; --panel:#1d1729; --panel2:#181226; --line:#322847;
+    --ink:#d8d2e4; --dim:#7d7396; --faint:#4d4364;
+    --phosphor:#8ef0d2; --rose:#e08baa; --amber:#e8c58a;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--bg); color:var(--ink); font-family:var(--mono); font-size:14px;}
+  body{padding:18px; max-width:1180px; margin:0 auto;}
+
+  .eyebrow{font-size:10px; letter-spacing:.22em; color:var(--dim); text-transform:uppercase;}
+  .note{font-size:11px; color:var(--dim); line-height:1.5;}
+
+  header{border:1px solid var(--line); background:var(--panel); padding:14px 16px; margin-bottom:14px;}
+  header h1{font-size:15px; font-weight:600; letter-spacing:.08em; text-transform:uppercase;}
+  header h1 .lock{color:var(--phosphor);}
+  header .sub{margin-top:4px;}
+
+  .statstrip{display:flex; flex-wrap:wrap; gap:0; border:1px solid var(--line); border-top:none; background:var(--panel2);}
+  .stat{padding:10px 16px; border-right:1px solid var(--line); min-width:96px;}
+  .stat b{display:block; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--ink);}
+  .stat.grok b{color:var(--phosphor);}
+  .stat.loss b{color:var(--rose);}
+  .stat span{font-size:10px; letter-spacing:.18em; color:var(--dim); text-transform:uppercase;}
+  .stat.badge{margin-left:auto; border-right:none; border-left:1px solid var(--line); display:none; align-items:center;}
+  .stat.badge.on{display:flex;}
+  .stat.badge b{color:var(--phosphor); font-size:13px; letter-spacing:.1em;}
+
+  .controls{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:14px 0;}
+  button, select{
+    font-family:var(--mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+    background:var(--panel); color:var(--ink); border:1px solid var(--line);
+    padding:8px 14px; cursor:pointer;
+  }
+  button:hover{border-color:var(--dim);}
+  button:focus-visible, select:focus-visible, input:focus-visible{outline:2px solid var(--phosphor); outline-offset:2px;}
+  button.primary{border-color:var(--phosphor); color:var(--phosphor);}
+  button:disabled{opacity:.4; cursor:default;}
+  .controls .spacer{flex:1;}
+  .controls label{font-size:11px; color:var(--dim); letter-spacing:.12em; text-transform:uppercase;}
+
+  .grid{display:grid; grid-template-columns: 1fr 1fr; gap:14px;}
+  .panel{border:1px solid var(--line); background:var(--panel); padding:12px;}
+  .panel h2{font-size:10px; letter-spacing:.22em; color:var(--dim); text-transform:uppercase; margin-bottom:8px;}
+  .panel h2 em{color:var(--faint); font-style:normal; letter-spacing:.05em; text-transform:none;}
+  canvas{display:block; width:100%; background:var(--bg); border:1px solid var(--line);}
+
+  .probe{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .eq{font-size:22px; margin:10px 0 6px; font-variant-numeric:tabular-nums;}
+  .eq .pred{color:var(--phosphor);}
+  .eq .pred.wrong{color:var(--rose);}
+  .sliders{display:grid; gap:10px; margin:8px 0;}
+  .sliders .row{display:grid; grid-template-columns:22px 1fr 34px; gap:10px; align-items:center;}
+  input[type=range]{width:100%; accent-color:var(--phosphor); background:transparent;}
+  .verdict{font-size:11px; margin-top:4px; color:var(--dim);}
+  .verdict .ok{color:var(--phosphor);}
+  .verdict .no{color:var(--rose);}
+
+  #log{height:150px; overflow-y:auto; font-size:11px; line-height:1.7; color:var(--dim); border:1px solid var(--line); background:var(--bg); padding:8px 10px;}
+  #log .g{color:var(--phosphor);} #log .f{color:var(--rose);} #log .n{color:var(--amber);}
+
+  footer{margin-top:16px;}
+  @media (max-width:900px){ .grid, .probe{grid-template-columns:1fr;} }
+  @media (prefers-reduced-motion: reduce){ :root{--trails:0;} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">PerceptionLab · port of anttiluode/ResonantCortex</div>
+  <h1>Resonant Cortex <span class="lock">— live grokking instrument</span></h1>
+  <div class="sub note">
+    This is not a recording. The complex-valued network (RCNet) is training in this tab, full-batch AdamW,
+    on (a + b) mod P — the same architecture as <span style="color:var(--ink)">resonant_cortex.py</span>:
+    tanh amplitude, learnable phase bias, skip-connected columns, neurogenesis on frustration.
+    Watch the embedding phases rotate until the hue gradient locks into rotational order.
+  </div>
+</header>
+
+<div class="statstrip">
+  <div class="stat"><b id="sEpoch">0</b><span>epoch</span></div>
+  <div class="stat grok"><b id="sAcc">0.0%</b><span>accuracy</span></div>
+  <div class="stat loss"><b id="sLoss">—</b><span>loss</span></div>
+  <div class="stat"><b id="sCols">1</b><span>columns</span></div>
+  <div class="stat"><b id="sBeta">—</b><span>β cryst.</span></div>
+  <div class="stat"><b id="sEps">—</b><span>epochs/s</span></div>
+  <div class="stat badge" id="grokBadge"><b>◉ PHASE-LOCKED @ EP <span id="grokEp">—</span></b></div>
+</div>
+
+<div class="controls">
+  <button id="btnRun" class="primary">Run</button>
+  <button id="btnGrow">Grow column</button>
+  <button id="btnReset">Reset</button>
+  <span class="spacer"></span>
+  <label for="selP">modulus P</label>
+  <select id="selP">
+    <option value="17">17 · 289 eqs</option>
+    <option value="29" selected>29 · 841 eqs</option>
+    <option value="47">47 · 2209 eqs</option>
+  </select>
+</div>
+
+<div class="grid">
+  <div class="panel" style="grid-row:span 2">
+    <h2>Phase wheel <em>· embedding phases of the 3 loudest neurons · hue = token value · angle = learned phase</em></h2>
+    <canvas id="wheel"></canvas>
+    <div class="note" style="margin-top:8px">
+      Each ring is one neuron. Each dot is one of the P tokens, placed at the phase that neuron assigns it.
+      Scrambled hue order = lookup-table territory. A clean hue sweep around the ring = the network found the
+      circle: token n living at phase k·2πn/P, so addition becomes rotation.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Training traces <em>· accuracy + log₁₀ loss · dashes mark neurogenesis</em></h2>
+    <canvas id="chart" height="150"></canvas>
+  </div>
+
+  <div class="panel">
+    <h2>Phase field <em>· wave-state phase, first 64 equations × 48 neurons · cyclic colormap</em></h2>
+    <canvas id="heat" height="150"></canvas>
+  </div>
+</div>
+
+<div class="probe" style="margin-top:14px">
+  <div class="panel">
+    <h2>Interference probe <em>· query the live weights</em></h2>
+    <div class="eq"><span id="pA">0</span> + <span id="pB">0</span> ≡ <span class="pred" id="pOut">?</span> <span style="color:var(--dim)">(mod <span id="pP">29</span>)</span></div>
+    <div class="sliders">
+      <div class="row"><span>a</span><input type="range" id="slA" min="0" max="28" value="7"><span id="vA">7</span></div>
+      <div class="row"><span>b</span><input type="range" id="slB" min="0" max="28" value="12"><span id="vB">12</span></div>
+    </div>
+    <canvas id="probeBars" height="70"></canvas>
+    <div class="verdict" id="verdict">Distribution over answers. Early in training it's mush; after phase-lock it's a spike.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Run log <em>· honest ledger</em></h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<footer class="note">
+  Faithful JS port of the PyTorch reference: ComplexLinear as two real mats, amplitude tanh + additive phase bias,
+  residual wave propagation, frustration monitor (loss-plateau → grow → 0.01σ shake → cooldown).
+  dim = 48, lr = 0.002, wd = 1e-4, full batch. Gradients hand-derived through polar reconstruction.
+</footer>
+
+<script>
+"use strict";
+// ============================================================ math core
+function randn(){let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+function Tensor(n){return {d:new Float32Array(n), g:new Float32Array(n), m:new Float32Array(n), v:new Float32Array(n)};}
+
+const DIM = 48;
+
+function makeModel(P){
+  const d = DIM;
+  const emb = Tensor(P*2*d);
+  for(let i=0;i<emb.d.length;i++) emb.d[i]=randn();
+  const Wo = Tensor(P*2*d), bo = Tensor(P);
+  const lim = 1/Math.sqrt(2*d);
+  for(let i=0;i<Wo.d.length;i++) Wo.d[i]=(Math.random()*2-1)*lim;
+  const model = {P, d, emb, Wo, bo, columns:[], t:0};
+  addColumn(model);
+  return model;
+}
+function addColumn(model){
+  const d=model.d;
+  const Wr=Tensor(d*d), Wi=Tensor(d*d), bp=Tensor(d);
+  const lim=Math.sqrt(6/(d+d));
+  for(let i=0;i<d*d;i++){Wr.d[i]=(Math.random()*2-1)*lim; Wi.d[i]=(Math.random()*2-1)*lim;}
+  for(let i=0;i<d;i++) bp.d[i]=randn()*0.1;
+  model.columns.push({Wr,Wi,bp});
+}
+function params(model){
+  const p=[model.emb,model.Wo,model.bo];
+  for(const c of model.columns) p.push(c.Wr,c.Wi,c.bp);
+  return p;
+}
+
+function trainEpoch(model, X, Y, ctx){
+  const P=model.P, d=model.d, B=Y.length, nC=model.columns.length;
+  if(!ctx.re || ctx.B!==B){
+    ctx.B=B; ctx.re=[]; ctx.im=[]; ctx.u=[]; ctx.v=[];
+    ctx.logits=new Float32Array(B*P);
+    ctx.gRe=new Float32Array(B*d); ctx.gIm=new Float32Array(B*d);
+    ctx.gU=new Float32Array(B*d); ctx.gV=new Float32Array(B*d);
+    ctx.tRe=new Float32Array(B*d); ctx.tIm=new Float32Array(B*d);
+    ctx.re.push(new Float32Array(B*d)); ctx.im.push(new Float32Array(B*d));
+  }
+  while(ctx.u.length<nC){
+    ctx.re.push(new Float32Array(B*d)); ctx.im.push(new Float32Array(B*d));
+    ctx.u.push(new Float32Array(B*d)); ctx.v.push(new Float32Array(B*d));
+  }
+  const emb=model.emb.d, re0=ctx.re[0], im0=ctx.im[0];
+  for(let b=0;b<B;b++){
+    const a=X[2*b], bb=X[2*b+1], oa=a*2*d, ob=bb*2*d, o=b*d;
+    for(let k=0;k<d;k++){
+      re0[o+k]=emb[oa+k]+emb[ob+k];
+      im0[o+k]=emb[oa+d+k]+emb[ob+d+k];
+    }
+  }
+  for(let c=0;c<nC;c++){
+    const col=model.columns[c];
+    const rin=ctx.re[c], iin=ctx.im[c], rout=ctx.re[c+1], iout=ctx.im[c+1];
+    const u=ctx.u[c], v=ctx.v[c], wr=col.Wr.d, wi=col.Wi.d, bpd=col.bp.d;
+    for(let b=0;b<B;b++){
+      const o=b*d;
+      for(let out=0;out<d;out++){
+        let su=0, sv=0; const wo=out*d;
+        for(let k=0;k<d;k++){
+          const r=rin[o+k], i=iin[o+k];
+          su+=wr[wo+k]*r-wi[wo+k]*i;
+          sv+=wr[wo+k]*i+wi[wo+k]*r;
+        }
+        u[o+out]=su; v[o+out]=sv;
+        const rad=Math.sqrt(su*su+sv*sv+1e-12);
+        const amp=Math.tanh(rad);
+        const phi=Math.atan2(sv,su)+bpd[out];
+        rout[o+out]=rin[o+out]+amp*Math.cos(phi);
+        iout[o+out]=iin[o+out]+amp*Math.sin(phi);
+      }
+    }
+  }
+  const reF=ctx.re[nC], imF=ctx.im[nC], Wo=model.Wo.d, bo=model.bo.d, logits=ctx.logits;
+  let loss=0, correct=0;
+  for(let b=0;b<B;b++){
+    const o=b*d, ol=b*P; let mx=-1e30;
+    for(let p=0;p<P;p++){
+      let s=bo[p]; const wo=p*2*d;
+      for(let k=0;k<d;k++) s+=Wo[wo+k]*reF[o+k]+Wo[wo+d+k]*imF[o+k];
+      logits[ol+p]=s; if(s>mx)mx=s;
+    }
+    let sum=0;
+    for(let p=0;p<P;p++){const e=Math.exp(logits[ol+p]-mx); logits[ol+p]=e; sum+=e;}
+    let best=0,bv=-1;
+    for(let p=0;p<P;p++){logits[ol+p]/=sum; if(logits[ol+p]>bv){bv=logits[ol+p];best=p;}}
+    if(best===Y[b])correct++;
+    loss+=-Math.log(logits[ol+Y[b]]+1e-12);
+  }
+  loss/=B;
+  for(const p of params(model)) p.g.fill(0);
+  const gRe=ctx.gRe, gIm=ctx.gIm; gRe.fill(0); gIm.fill(0);
+  const dWo=model.Wo.g, dbo=model.bo.g;
+  for(let b=0;b<B;b++){
+    const o=b*d, ol=b*P;
+    for(let p=0;p<P;p++){
+      let dl=logits[ol+p]; if(p===Y[b])dl-=1; dl/=B;
+      dbo[p]+=dl; const wo=p*2*d;
+      for(let k=0;k<d;k++){
+        dWo[wo+k]+=dl*reF[o+k];
+        dWo[wo+d+k]+=dl*imF[o+k];
+        gRe[o+k]+=Wo[wo+k]*dl;
+        gIm[o+k]+=Wo[wo+d+k]*dl;
+      }
+    }
+  }
+  for(let c=nC-1;c>=0;c--){
+    const col=model.columns[c];
+    const rin=ctx.re[c], iin=ctx.im[c], u=ctx.u[c], v=ctx.v[c];
+    const wr=col.Wr.d, wi=col.Wi.d, bpd=col.bp.d;
+    const dWr=col.Wr.g, dWi=col.Wi.g, dbp=col.bp.g;
+    const gU=ctx.gU, gV=ctx.gV;
+    for(let b=0;b<B;b++){
+      const o=b*d;
+      for(let out=0;out<d;out++){
+        const su=u[o+out], sv=v[o+out];
+        const rad=Math.sqrt(su*su+sv*sv+1e-12);
+        const amp=Math.tanh(rad), sech2=1-amp*amp;
+        const phi=Math.atan2(sv,su)+bpd[out];
+        const cp=Math.cos(phi), sp=Math.sin(phi);
+        const gr=gRe[o+out], gi=gIm[o+out];
+        const gRad=(gr*cp+gi*sp)*sech2;
+        const gPhi=-gr*amp*sp+gi*amp*cp;
+        dbp[out]+=gPhi;
+        gU[o+out]=gRad*(su/rad)-gPhi*(sv/(rad*rad));
+        gV[o+out]=gRad*(sv/rad)+gPhi*(su/(rad*rad));
+      }
+    }
+    const tRe=ctx.tRe, tIm=ctx.tIm; tRe.fill(0); tIm.fill(0);
+    for(let b=0;b<B;b++){
+      const o=b*d;
+      for(let out=0;out<d;out++){
+        const gu=gU[o+out], gv=gV[o+out], wo=out*d;
+        for(let k=0;k<d;k++){
+          const r=rin[o+k], i=iin[o+k];
+          dWr[wo+k]+=gu*r+gv*i;
+          dWi[wo+k]+=-gu*i+gv*r;
+          tRe[o+k]+=wr[wo+k]*gu+wi[wo+k]*gv;
+          tIm[o+k]+=-wi[wo+k]*gu+wr[wo+k]*gv;
+        }
+      }
+    }
+    for(let n=0;n<B*d;n++){gRe[n]+=tRe[n]; gIm[n]+=tIm[n];}
+  }
+  const dEmb=model.emb.g;
+  for(let b=0;b<B;b++){
+    const a=X[2*b], bb=X[2*b+1], oa=a*2*d, ob=bb*2*d, o=b*d;
+    for(let k=0;k<d;k++){
+      const gr=gRe[o+k], gi=gIm[o+k];
+      dEmb[oa+k]+=gr; dEmb[oa+d+k]+=gi;
+      dEmb[ob+k]+=gr; dEmb[ob+d+k]+=gi;
+    }
+  }
+  model.t++;
+  const b1=0.9,b2=0.999,eps=1e-8, lr=0.002, wd=1e-4;
+  const bc1=1-Math.pow(b1,model.t), bc2=1-Math.pow(b2,model.t);
+  for(const p of params(model)){
+    const dd=p.d, gg=p.g, mm=p.m, vv=p.v;
+    for(let i=0;i<dd.length;i++){
+      mm[i]=b1*mm[i]+(1-b1)*gg[i];
+      vv[i]=b2*vv[i]+(1-b2)*gg[i]*gg[i];
+      dd[i]-=lr*((mm[i]/bc1)/(Math.sqrt(vv[i]/bc2)+eps)+wd*dd[i]);
+    }
+  }
+  // beta: std of amplitudes of final wave state
+  let mean=0, n2=B*d;
+  for(let n=0;n<n2;n++){const a=Math.hypot(reF[n],imF[n]); ctx.tRe[n]=a; mean+=a;}
+  mean/=n2;
+  let varr=0;
+  for(let n=0;n<n2;n++){const dv=ctx.tRe[n]-mean; varr+=dv*dv;}
+  return {loss, acc:correct/B, beta:Math.sqrt(varr/n2)};
+}
+
+// single-sample forward for the probe
+function forwardOne(model, a, b, probsOut){
+  const P=model.P, d=model.d;
+  const emb=model.emb.d;
+  let re=new Float32Array(d), im=new Float32Array(d);
+  const oa=a*2*d, ob=b*2*d;
+  for(let k=0;k<d;k++){re[k]=emb[oa+k]+emb[ob+k]; im[k]=emb[oa+d+k]+emb[ob+d+k];}
+  for(const col of model.columns){
+    const wr=col.Wr.d, wi=col.Wi.d, bpd=col.bp.d;
+    const nre=new Float32Array(d), nim=new Float32Array(d);
+    for(let out=0;out<d;out++){
+      let su=0,sv=0; const wo=out*d;
+      for(let k=0;k<d;k++){su+=wr[wo+k]*re[k]-wi[wo+k]*im[k]; sv+=wr[wo+k]*im[k]+wi[wo+k]*re[k];}
+      const rad=Math.sqrt(su*su+sv*sv+1e-12);
+      const amp=Math.tanh(rad), phi=Math.atan2(sv,su)+bpd[out];
+      nre[out]=re[out]+amp*Math.cos(phi);
+      nim[out]=im[out]+amp*Math.sin(phi);
+    }
+    re=nre; im=nim;
+  }
+  const Wo=model.Wo.d, bo=model.bo.d;
+  let mx=-1e30;
+  for(let p=0;p<P;p++){
+    let s=bo[p]; const wo=p*2*d;
+    for(let k=0;k<d;k++) s+=Wo[wo+k]*re[k]+Wo[wo+d+k]*im[k];
+    probsOut[p]=s; if(s>mx)mx=s;
+  }
+  let sum=0;
+  for(let p=0;p<P;p++){probsOut[p]=Math.exp(probsOut[p]-mx); sum+=probsOut[p];}
+  let best=0,bv=-1;
+  for(let p=0;p<P;p++){probsOut[p]/=sum; if(probsOut[p]>bv){bv=probsOut[p];best=p;}}
+  return best;
+}
+
+// ============================================================ run state
+let model, ctx, X, Y, running=false, grokEpoch=-1;
+let history; // {acc:[], logloss:[], grow:[]}
+let lossWin, cooldown, beta=0, epsRate=0;
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function logLine(html, cls){
+  const el=document.getElementById("log");
+  const div=document.createElement("div");
+  if(cls) div.className=cls;
+  div.innerHTML=html;
+  el.appendChild(div);
+  el.scrollTop=el.scrollHeight;
+}
+
+function reset(){
+  const P=parseInt(document.getElementById("selP").value,10);
+  model=makeModel(P); ctx={};
+  X=new Int32Array(P*P*2); Y=new Int32Array(P*P);
+  let n=0;
+  for(let i=0;i<P;i++)for(let j=0;j<P;j++){X[2*n]=i;X[2*n+1]=j;Y[n]=(i+j)%P;n++;}
+  history={acc:[],logloss:[],grow:[]};
+  lossWin=[]; cooldown=0; grokEpoch=-1; beta=0;
+  document.getElementById("grokBadge").classList.remove("on");
+  document.getElementById("sCols").textContent="1";
+  document.getElementById("pP").textContent=P;
+  for(const id of ["slA","slB"]){
+    const s=document.getElementById(id);
+    s.max=P-1; if(+s.value>P-1)s.value=P-1;
+  }
+  document.getElementById("log").innerHTML="";
+  logLine(`boot · P=${P}, dim=${DIM}, ${P*P} equations, 1 column, full-batch AdamW lr 0.002`);
+  wheelCtx.fillStyle=css("--bg"); wheelCtx.fillRect(0,0,wheelCv.width,wheelCv.height);
+  drawAll(); updateProbe();
+}
+
+function maybeGrow(epoch, loss, acc, manual){
+  if(!manual){
+    if(epoch<=300 || cooldown>0 || acc>=0.99 || lossWin.length<200) return;
+    let recent=0, older=0;
+    for(let i=0;i<100;i++){older+=lossWin[i]; recent+=lossWin[lossWin.length-100+i];}
+    if(older/100-recent/100>=0.005) return;
+    logLine(`ep ${epoch} · frustration detected — loss stuck at ${loss.toFixed(4)}`,"f");
+  }
+  addColumn(model);
+  for(const p of params(model)) for(let i=0;i<p.d.length;i++) p.d[i]+=randn()*0.01;
+  cooldown=300;
+  history.grow.push(history.acc.length);
+  document.getElementById("sCols").textContent=model.columns.length;
+  logLine(`ep ${history.acc.length} · ${manual?"manual":"auto"} neurogenesis → ${model.columns.length} columns (+0.01σ shake, 300-ep cooldown)`,"n");
+}
+
+function tick(){
+  if(!running) return;
+  const t0=performance.now();
+  let last=null, n=0;
+  while(performance.now()-t0<28){
+    last=trainEpoch(model,X,Y,ctx);
+    n++;
+    const ep=history.acc.length;
+    history.acc.push(last.acc);
+    history.logloss.push(Math.log10(Math.max(last.loss,1e-8)));
+    lossWin.push(last.loss); if(lossWin.length>200)lossWin.shift();
+    maybeGrow(ep,last.loss,last.acc,false);
+    if(cooldown>0)cooldown--;
+    if(last.acc===1 && grokEpoch<0){
+      grokEpoch=ep;
+      document.getElementById("grokEp").textContent=ep;
+      document.getElementById("grokBadge").classList.add("on");
+      logLine(`ep ${ep} · <b>GROKKED</b> — 100% accuracy. it didn't learn a table; it rotated phases until alignment.`,"g");
+      running=false;
+      document.getElementById("btnRun").textContent="Run";
+      break;
+    }
+    if(model.columns.length>6){running=false; break;}
+  }
+  if(last){
+    beta=last.beta;
+    epsRate=0.8*epsRate+0.2*(n/((performance.now()-t0)/1000));
+    const ep=history.acc.length;
+    document.getElementById("sEpoch").textContent=ep;
+    document.getElementById("sAcc").textContent=(last.acc*100).toFixed(1)+"%";
+    document.getElementById("sLoss").textContent=last.loss.toFixed(4);
+    document.getElementById("sBeta").textContent=beta.toFixed(3);
+    document.getElementById("sEps").textContent=epsRate.toFixed(0);
+    if(ep%200<n) logLine(`ep ${ep} · loss ${last.loss.toFixed(4)} · acc ${(last.acc*100).toFixed(1)}% · β ${beta.toFixed(3)}`);
+  }
+  drawAll(); updateProbe();
+  if(running) requestAnimationFrame(tick);
+}
+
+// ============================================================ drawing
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function fitCanvas(cv, hRatio){
+  const dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth;
+  const h=hRatio? Math.round(w*hRatio) : parseInt(cv.getAttribute("height"),10);
+  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  cv.style.height=h+"px";
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+  return g;
+}
+const wheelCv=document.getElementById("wheel");
+const chartCv=document.getElementById("chart");
+const heatCv=document.getElementById("heat");
+const barsCv=document.getElementById("probeBars");
+let wheelCtx, chartCtx, heatCtx, barsCtx;
+function layout(){
+  wheelCtx=fitCanvas(wheelCv,0.92);
+  chartCtx=fitCanvas(chartCv);
+  heatCtx=fitCanvas(heatCv);
+  barsCtx=fitCanvas(barsCv);
+  if(wheelCtx){wheelCtx.fillStyle=css("--bg"); wheelCtx.fillRect(0,0,wheelCv.clientWidth,wheelCv.clientHeight);}
+}
+window.addEventListener("resize",()=>{layout(); if(model){drawAll(); updateProbe();}});
+
+function topNeurons(k){
+  // mean embedding amplitude per neuron across tokens
+  const P=model.P, d=model.d, emb=model.emb.d;
+  const amp=new Float32Array(d);
+  for(let n=0;n<P;n++){
+    const o=n*2*d;
+    for(let j=0;j<d;j++) amp[j]+=Math.hypot(emb[o+j],emb[o+d+j]);
+  }
+  const idx=[...amp.keys()].sort((a,b)=>amp[b]-amp[a]);
+  return idx.slice(0,k);
+}
+
+function drawWheel(){
+  const g=wheelCtx, W=wheelCv.clientWidth, H=wheelCv.clientHeight;
+  const P=model.P, d=model.d, emb=model.emb.d;
+  // trails: translucent wash instead of clear
+  g.fillStyle= reduceMotion ? css("--bg") : "rgba(20,16,29,0.28)";
+  g.fillRect(0,0,W,H);
+  const cx=W/2, cy=H/2, R=Math.min(W,H)/2-18;
+  const rings=[R, R*0.72, R*0.44];
+  const neurons=topNeurons(3);
+  g.strokeStyle=css("--line"); g.lineWidth=1;
+  for(const r of rings){g.beginPath(); g.arc(cx,cy,r,0,Math.PI*2); g.stroke();}
+  // crosshair
+  g.beginPath(); g.moveTo(cx-R-8,cy); g.lineTo(cx+R+8,cy); g.moveTo(cx,cy-R-8); g.lineTo(cx,cy+R+8); g.stroke();
+  const dotR = P>40? 3.4 : 4.5;
+  for(let ri=0;ri<3;ri++){
+    const j=neurons[ri], r=rings[ri];
+    for(let n=0;n<P;n++){
+      const o=n*2*d;
+      const rePart=emb[o+j], imPart=emb[o+d+j];
+      const phi=Math.atan2(imPart,rePart);
+      const x=cx+r*Math.cos(phi), y=cy-r*Math.sin(phi);
+      g.fillStyle=`hsl(${(n/P)*360},72%,64%)`;
+      g.beginPath(); g.arc(x,y,dotR,0,Math.PI*2); g.fill();
+    }
+    g.fillStyle=css("--faint");
+    g.font="10px "+css("--mono");
+    g.fillText("n"+j, cx+r*0.707+4, cy-r*0.707-4);
+  }
+  if(grokEpoch>=0){
+    g.strokeStyle=css("--phosphor"); g.globalAlpha=0.5; g.lineWidth=2;
+    g.beginPath(); g.arc(cx,cy,R+8,0,Math.PI*2); g.stroke();
+    g.globalAlpha=1;
+  }
+}
+
+function drawChart(){
+  const g=chartCtx, W=chartCv.clientWidth, H=chartCv.clientHeight;
+  g.fillStyle=css("--bg"); g.fillRect(0,0,W,H);
+  const n=history.acc.length; if(n<2)return;
+  const px=i=>i/(n-1)*(W-8)+4;
+  // growth markers
+  g.strokeStyle=css("--amber"); g.setLineDash([3,4]); g.lineWidth=1;
+  for(const ge of history.grow){g.beginPath(); g.moveTo(px(ge),0); g.lineTo(px(ge),H); g.stroke();}
+  g.setLineDash([]);
+  // log loss (range: min..max)
+  let lo=1e9, hi=-1e9;
+  for(const v of history.logloss){if(v<lo)lo=v; if(v>hi)hi=v;}
+  if(hi-lo<1e-6)hi=lo+1e-6;
+  g.strokeStyle=css("--rose"); g.lineWidth=1.4; g.beginPath();
+  for(let i=0;i<n;i++){
+    const y=4+(1-(history.logloss[i]-lo)/(hi-lo))*(H-8);
+    i?g.lineTo(px(i),y):g.moveTo(px(i),y);
+  }
+  g.stroke();
+  // accuracy 0..1
+  g.strokeStyle=css("--phosphor"); g.lineWidth=1.6; g.beginPath();
+  for(let i=0;i<n;i++){
+    const y=4+(1-history.acc[i])*(H-8);
+    i?g.lineTo(px(i),y):g.moveTo(px(i),y);
+  }
+  g.stroke();
+  g.font="10px "+css("--mono");
+  g.fillStyle=css("--phosphor"); g.fillText("acc",6,12);
+  g.fillStyle=css("--rose"); g.fillText("log₁₀ loss",6,24);
+}
+
+function drawHeat(){
+  const g=heatCtx, W=heatCv.clientWidth, H=heatCv.clientHeight;
+  if(!ctx.re || history.acc.length===0){g.fillStyle=css("--bg"); g.fillRect(0,0,W,H); return;}
+  const d=model.d, nC=model.columns.length;
+  const reF=ctx.re[nC], imF=ctx.im[nC];
+  const rows=Math.min(64,ctx.B);
+  const img=g.createImageData(d,rows);
+  for(let r2=0;r2<rows;r2++){
+    for(let c2=0;c2<d;c2++){
+      const o=r2*d+c2;
+      const phi=Math.atan2(imF[o],reF[o]); // -pi..pi
+      const hue=((phi+Math.PI)/(2*Math.PI))*360;
+      const amp=Math.min(1,Math.hypot(reF[o],imF[o])/2);
+      const [rr,gg2,bb]=hsl2rgb(hue,0.55,0.18+0.42*amp);
+      const q=(r2*d+c2)*4;
+      img.data[q]=rr; img.data[q+1]=gg2; img.data[q+2]=bb; img.data[q+3]=255;
+    }
+  }
+  // scale up via offscreen
+  const off=drawHeat.off||(drawHeat.off=document.createElement("canvas"));
+  off.width=d; off.height=rows;
+  off.getContext("2d").putImageData(img,0,0);
+  g.imageSmoothingEnabled=false;
+  g.clearRect(0,0,W,H);
+  g.drawImage(off,0,0,W,H);
+}
+function hsl2rgb(h,s,l){
+  h/=360;
+  const q=l<0.5?l*(1+s):l+s-l*s, p=2*l-q;
+  const f=t=>{t=(t%1+1)%1;
+    if(t<1/6)return p+(q-p)*6*t;
+    if(t<1/2)return q;
+    if(t<2/3)return p+(q-p)*(2/3-t)*6;
+    return p;};
+  return [Math.round(f(h+1/3)*255),Math.round(f(h)*255),Math.round(f(h-1/3)*255)];
+}
+
+function drawAll(){drawWheel(); drawChart(); drawHeat();}
+
+// ============================================================ probe
+const probs=new Float32Array(97);
+function updateProbe(){
+  if(!model)return;
+  const P=model.P;
+  const a=+document.getElementById("slA").value;
+  const b=+document.getElementById("slB").value;
+  document.getElementById("vA").textContent=a;
+  document.getElementById("vB").textContent=b;
+  document.getElementById("pA").textContent=a;
+  document.getElementById("pB").textContent=b;
+  const pred=forwardOne(model,a,b,probs);
+  const truth=(a+b)%P;
+  const out=document.getElementById("pOut");
+  out.textContent=pred;
+  out.className="pred"+(pred===truth?"":" wrong");
+  document.getElementById("verdict").innerHTML =
+    pred===truth
+      ? `<span class="ok">✓ matches</span> ground truth ${truth} · confidence ${(probs[pred]*100).toFixed(1)}%`
+      : `<span class="no">✗ ground truth is ${truth}</span> · network says ${pred} at ${(probs[pred]*100).toFixed(1)}%`;
+  // bars
+  const g=barsCtx, W=barsCv.clientWidth, H=barsCv.clientHeight;
+  g.fillStyle=css("--bg"); g.fillRect(0,0,W,H);
+  const bw=W/P;
+  for(let p=0;p<P;p++){
+    const h=probs[p]*(H-14);
+    g.fillStyle = p===truth ? css("--phosphor") : `hsl(${(p/P)*360},50%,42%)`;
+    g.fillRect(p*bw+1, H-12-h, Math.max(1,bw-2), h);
+  }
+  g.fillStyle=css("--dim"); g.font="9px "+css("--mono");
+  g.fillText("0",2,H-2); g.fillText(String(P-1),W-16,H-2);
+}
+
+// ============================================================ wiring
+document.getElementById("btnRun").addEventListener("click",()=>{
+  running=!running;
+  document.getElementById("btnRun").textContent=running?"Pause":"Run";
+  if(running) requestAnimationFrame(tick);
+});
+document.getElementById("btnGrow").addEventListener("click",()=>{
+  if(model.columns.length>6){logLine("column cap reached (6) — reset to go again","f"); return;}
+  maybeGrow(history.acc.length,0,0,true);
+  drawAll();
+});
+document.getElementById("btnReset").addEventListener("click",()=>{
+  running=false; document.getElementById("btnRun").textContent="Run";
+  document.getElementById("sEpoch").textContent="0";
+  document.getElementById("sAcc").textContent="0.0%";
+  document.getElementById("sLoss").textContent="—";
+  document.getElementById("sBeta").textContent="—";
+  document.getElementById("sEps").textContent="—";
+  reset();
+});
+document.getElementById("selP").addEventListener("change",()=>document.getElementById("btnReset").click());
+document.getElementById("slA").addEventListener("input",updateProbe);
+document.getElementById("slB").addEventListener("input",updateProbe);
+
+layout();
+reset();
+logLine("press RUN. the whole thing trains right here — no server, no GPU, no recording.");
+</script>
+</body>
+</html>
